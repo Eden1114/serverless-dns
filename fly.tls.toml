@@ -1,0 +1,108 @@
+app = ""
+
+kill_signal = "SIGINT"
+kill_timeout = "15s"
+# swap must be disabled when using "suspend"
+# swap_size_mb = 152
+
+[build]
+  dockerfile = "node.Dockerfile"
+
+[env]
+  # offload TLS on to fly-proxy;
+  # tls-tls_options for [[services]] must be set
+  TLS_OFFLOAD = "true"
+  CLOUD_PLATFORM = "fly"
+  BUN_ENV = "production"
+  DENO_ENV = "production"
+  NODE_ENV = "production"
+  LOG_LEVEL = "info"
+
+[experimental]
+auto_rollback = true
+
+# community.fly.io/t/19180
+# fly.io/docs/machines/guides-examples/machine-restart-policy
+[[restart]]
+  policy = "on-failure"
+  retries = 3
+
+# DNS over HTTPS (well, h2c and http1.1)
+[[services]]
+  internal_port = 8055
+  protocol = "tcp"
+  # community.fly.io/t/20672
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+
+  [services.concurrency]
+  hard_limit = 775
+  soft_limit = 700
+  type = "connections"
+
+  [[services.ports]]
+  handlers = ["tls"]
+  tls_options = { alpn = ["h2", "http/1.1"] }
+  port = 443
+
+  [[services.ports]]
+  handlers = ["tls"]
+  tls_options = { alpn = ["h2", "http/1.1"] }
+  port = 8055
+
+  [[services.tcp_checks]]
+    # super aggressive interval and timeout because
+    # health-check routing is handled by fly-proxy
+    # and it is cross-region
+    # community.fly.io/t/12997
+    interval = "5s"
+    timeout = "1s"
+    grace_period = "15s"
+    # restart_limit is unused in appsv2
+    restart_limit = 0
+
+# DNS over TCP/TLS
+[[services]]
+  internal_port = 10555
+  protocol = "tcp"
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+
+  [services.concurrency]
+  hard_limit = 775
+  soft_limit = 700
+  type = "connections"
+
+  [[services.ports]]
+  # TODO: ProxyProto v2
+  handlers = ["tls"]
+  port = 853
+
+  [[services.ports]]
+  # TODO: ProxyProto v2
+  handlers = ["tls"]
+  port = 10555
+
+  [[services.tcp_checks]]
+    # super aggressive interval and timeout because
+    # health-check routing is handled by fly-proxy
+    # and it is cross-region
+    # community.fly.io/t/12997
+    interval = "5s"
+    timeout = "1s"
+    grace_period = "15s"
+    # restart_limit is unused in appsv2
+    restart_limit = 0
+
+# community.fly.io/t/5490/3
+[checks]
+  [checks.up]
+    # grace_period affects time taken for rolling deploys
+    grace_period = "15s"
+    interval = "15s"
+    method = "get"
+    path = "/check"
+    port = 8888
+    timeout = "2s"
+    type = "http"
+
